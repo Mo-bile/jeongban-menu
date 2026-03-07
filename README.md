@@ -66,22 +66,22 @@ crontab -e
 추가:
 
 ```
-0 9 * * 1 cd /Users/mojaeyeong/Documents/ownProject/jeongban && /usr/local/bin/node scripts/fetch-menu-and-notify.js
+0 9 * * 1 cd /path/to/jeongban && /usr/local/bin/node scripts/fetch-menu-and-notify.js
 ```
 
-`node` 경로는 `which node`로 확인한 뒤 넣으세요. `.env`는 프로젝트 루트에 두면 스크립트가 자동으로 로드합니다.
+`/path/to/jeongban`을 실제 프로젝트 경로로, `node` 경로는 `which node`로 확인한 뒤 넣으세요. `.env`는 프로젝트 루트에 두면 스크립트가 자동으로 로드합니다.
 
 ## GitHub Actions에서 매주 실행
 
 1. 이 저장소를 GitHub에 푸시
 2. **Settings** → **Secrets and variables** → **Actions** 에서 `SLACK_WEBHOOK_URL` 추가
-3. `.github/workflows/fetch-menu.yml` 생성 예시:
+3. `.github/workflows/fetch-menu.yml` 에는 아래와 같이 스케줄·캐시·실행이 정의되어 있습니다.
 
 ```yaml
 name: Weekly menu notification
 on:
   schedule:
-    - cron: '0 0 * * 1'   # 매주 월요일 00:00 UTC (한국 09:00)
+    - cron: "0 0 * * 1"   # 매주 월요일 00:00 UTC (한국 09:00)
   workflow_dispatch:
 jobs:
   notify:
@@ -90,14 +90,22 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: node scripts/fetch-menu-and-notify.js
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 ```
+
+npm과 Playwright 브라우저를 캐시해 두 번째 실행부터 설치 시간이 줄어듭니다.
 
 ## GitLab CI/CD에서 매주 실행
 
