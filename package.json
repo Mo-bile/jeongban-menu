@@ -1,0 +1,21 @@
+{
+  "name": "jeongban",
+  "version": "1.0.0",
+  "description": "네이버 지도 정반식당 주간메뉴표 → Slack 알림 자동화",
+  "type": "module",
+  "main": "scripts/fetch-menu-and-notify.js",
+  "scripts": {
+    "fetch-menu": "node scripts/fetch-menu-and-notify.js",
+    "postinstall": "npx playwright install chromium"
+  },
+  "keywords": ["naver", "slack", "menu", "cron"],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@slack/webhook": "^7.0.0",
+    "dotenv": "^16.4.5",
+    "playwright": "^1.49.0"
+  }
+}

@@ -1,0 +1,16 @@
+# 주간 메뉴 Slack 알림 — GitLab CI/CD
+# 매주 실행: Settings → CI/CD → Pipeline schedules 에서 cron 설정
+# 수동 실행: Run pipeline → Run
+
+stages:
+  - notify
+
+fetch-menu:
+  stage: notify
+  image: mcr.microsoft.com/playwright:v1.49.0-noble
+  before_script:
+    - npm ci
+  script:
+    - node scripts/fetch-menu-and-notify.js
+  variables:
+    SLACK_WEBHOOK_URL: $SLACK_WEBHOOK_URL
