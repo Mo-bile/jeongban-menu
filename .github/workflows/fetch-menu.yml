@@ -1,7 +1,7 @@
 name: Weekly menu notification
 on:
   schedule:
-    - cron: "0 0 * * 1"
+    - cron: "0 0 * * 2"
   workflow_dispatch:
 
 jobs:
@@ -13,6 +13,12 @@ jobs:
         with:
           node-version: "20"
           cache: "npm"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: node scripts/fetch-menu-and-notify.js
