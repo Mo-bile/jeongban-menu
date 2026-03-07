@@ -9,6 +9,8 @@ const DEFAULT_PLACE_URL =
 const FEED_ITEM_SELECTOR = ".place_section_content ul li.place_apply_pui";
 const TITLE_SELECTOR = ".pui__dGLDWy";
 const IMAGE_SELECTOR = ".place_thumb img";
+/** 썸네일 클릭 시 나타나는 원본 이미지 (미리보기는 깨질 수 있음) */
+const PHOTO_AREA_IMG_SELECTOR = ".photo_area img";
 const BODY_SELECTOR = '.pui__vn15t2 a[data-pui-click-code="text"]';
 const TIME_SELECTOR = "time";
 
@@ -92,6 +94,36 @@ export async function fetchLatestFeedItem(options = {}) {
 
     await targetPage.waitForSelector(FEED_ITEM_SELECTOR, { timeout });
     const item = await extractFirstFeedItem(targetPage);
+    if (!item) return null;
+
+    const thumbnailUrl = item.imageUrl;
+    const photoAreaTimeout = 6000;
+
+    try {
+      const thumbLocator = targetPage.locator(FEED_ITEM_SELECTOR).first().locator(".place_thumb");
+      await thumbLocator.click({ timeout: 3000 });
+
+      let photoImg = null;
+      try {
+        photoImg = await targetPage.waitForSelector(PHOTO_AREA_IMG_SELECTOR, {
+          state: "visible",
+          timeout: photoAreaTimeout,
+        });
+      } catch {
+        photoImg = await page.waitForSelector(PHOTO_AREA_IMG_SELECTOR, {
+          state: "visible",
+          timeout: 3000,
+        });
+      }
+
+      if (photoImg) {
+        const fullImageUrl = await photoImg.getAttribute("src");
+        if (fullImageUrl && fullImageUrl.trim()) item.imageUrl = fullImageUrl;
+      }
+    } catch {
+      item.imageUrl = thumbnailUrl;
+    }
+
     return item;
   } finally {
     await browser.close();
