@@ -27,9 +27,13 @@ const PYTHON_BIN = process.env.PYTHON_BIN || "python3";
 const OCR_SCRIPT = path.resolve(__dirname, "ocr-menu.py");
 
 async function runOcr(imageUrl) {
+  const env = { ...process.env };
+  if (process.env.FORCE_WEEKDAY !== undefined) env.FORCE_WEEKDAY = process.env.FORCE_WEEKDAY;
+
   const { stdout } = await execFileAsync(PYTHON_BIN, [OCR_SCRIPT, imageUrl], {
     timeout: 300_000,
     maxBuffer: 1024 * 1024,
+    env,
   });
   // Surya 모델 로딩 시 warning이 stdout에 섞일 수 있으므로 마지막 JSON 라인만 파싱
   const lastJsonLine = stdout

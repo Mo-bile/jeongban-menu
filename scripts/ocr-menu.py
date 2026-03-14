@@ -266,10 +266,15 @@ def main():
 
     source = sys.argv[1]
 
-    # 요일 결정
+    # 요일 결정 (CLI 인자 > FORCE_WEEKDAY 환경변수 > 오늘 날짜 순)
     if len(sys.argv) >= 3:
         try:
             weekday_idx = int(sys.argv[2])
+        except ValueError:
+            weekday_idx = datetime.today().weekday()
+    elif os.environ.get("FORCE_WEEKDAY") is not None:
+        try:
+            weekday_idx = int(os.environ["FORCE_WEEKDAY"])
         except ValueError:
             weekday_idx = datetime.today().weekday()
     else:
