@@ -1,6 +1,7 @@
 # 주간 메뉴 Slack 알림 — GitLab CI/CD
-# 매주 실행: Settings → CI/CD → Pipeline schedules 에서 cron 설정
-# 수동 실행: Run pipeline → Run
+# Pipeline schedules (Settings → CI/CD → Pipeline schedules):
+#   - 이미지 전송: "5 1 * * 1"    (매주 월요일 10:05 KST)  변수: JOB_TYPE=image
+#   - OCR 전송:   "10 1 * * 1-5"  (평일 매일 10:10 KST)    변수: JOB_TYPE=ocr
 
 stages:
   - notify
@@ -8,9 +9,32 @@ stages:
 fetch-menu:
   stage: notify
   image: mcr.microsoft.com/playwright:v1.49.0-noble
+  rules:
+    - if: '$JOB_TYPE == "image"'
+    - if: '$CI_PIPELINE_SOURCE == "web" && $JOB_TYPE != "ocr"'
   before_script:
     - npm ci
   script:
     - node scripts/fetch-menu-and-notify.js
+  variables:
+    SLACK_WEBHOOK_URL: $SLACK_WEBHOOK_URL
+
+fetch-menu-ocr:
+  stage: notify
+  image: mcr.microsoft.com/playwright:v1.49.0-noble
+  rules:
+    - if: '$JOB_TYPE == "ocr"'
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq python3 python3-pip python3-venv
+    - python3 -m venv .venv
+    - .venv/bin/pip install -r requirements.txt -q
+    - npm ci
+  script:
+    - PYTHON_BIN=.venv/bin/python node scripts/fetch-menu-ocr-and-notify.js
+  cache:
+    key: surya-models-v1
+    paths:
+      - ~/.cache/surya/
+      - ~/.cache/pip/
   variables:
     SLACK_WEBHOOK_URL: $SLACK_WEBHOOK_URL

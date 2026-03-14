@@ -68,3 +68,60 @@ export async function sendMenuNotification(webhookUrl, item) {
     blocks,
   });
 }
+
+const WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"];
+
+/**
+ * OCR로 추출한 오늘의 메뉴 데이터로 Slack Block Kit 메시지를 구성합니다.
+ * @param {{ weekday: string; menu: string[] }} ocrData
+ * @returns {Array<object>} Slack blocks
+ */
+function buildMenuTextBlocks(ocrData) {
+  const today = new Date();
+  const month = today.getMonth() + 1;
+  const day = today.getDate();
+  const weekday = WEEKDAY_KO[today.getDay() === 0 ? 6 : today.getDay() - 1];
+
+  const menuText = ocrData.menu.join("\n");
+
+  return [
+    {
+      type: "header",
+      text: {
+        type: "plain_text",
+        text: `🍽 [정반식당] 오늘의 메뉴 (${month}/${day} ${weekday})`,
+        emoji: true,
+      },
+    },
+    {
+      type: "section",
+      text: { type: "mrkdwn", text: menuText },
+    },
+    {
+      type: "context",
+      elements: [
+        {
+          type: "mrkdwn",
+          text: "<https://map.naver.com/p/entry/place/1671594903?placePath=%2Ffeed|네이버 지도에서 보기>",
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Slack Incoming Webhook으로 OCR 추출 텍스트 기반 오늘의 메뉴 알림을 보냅니다.
+ * OCR 실패 또는 공휴일 케이스는 호출 전에 걸러져야 합니다.
+ * @param {string} webhookUrl - Slack Incoming Webhook URL
+ * @param {{ weekday: string; menu: string[] }} ocrData - OCR 결과
+ * @returns {Promise<void>}
+ */
+export async function sendMenuTextNotification(webhookUrl, ocrData) {
+  const webhook = new IncomingWebhook(webhookUrl);
+  const blocks = buildMenuTextBlocks(ocrData);
+
+  await webhook.send({
+    text: `[정반식당] ${ocrData.weekday}요일 메뉴`,
+    blocks,
+  });
+}
