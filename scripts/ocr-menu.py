@@ -60,8 +60,10 @@ def download_image(source: str) -> Image.Image:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
                 f.write(resp.read())
                 tmp_path = f.name
-        img = Image.open(tmp_path).convert("RGB")
-        os.unlink(tmp_path)
+        try:
+            img = Image.open(tmp_path).convert("RGB")
+        finally:
+            os.unlink(tmp_path)
         return img
     return Image.open(source).convert("RGB")
 

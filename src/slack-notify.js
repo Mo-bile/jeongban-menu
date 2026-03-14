@@ -69,8 +69,6 @@ export async function sendMenuNotification(webhookUrl, item) {
   });
 }
 
-const WEEKDAY_KO = ["월", "화", "수", "목", "금", "토", "일"];
-
 /**
  * OCR로 추출한 오늘의 메뉴 데이터로 Slack Block Kit 메시지를 구성합니다.
  * @param {{ weekday: string; menu: string[] }} ocrData
@@ -80,7 +78,6 @@ function buildMenuTextBlocks(ocrData) {
   const today = new Date();
   const month = today.getMonth() + 1;
   const day = today.getDate();
-  const weekday = WEEKDAY_KO[today.getDay() === 0 ? 6 : today.getDay() - 1];
 
   const menuText = ocrData.menu.join("\n");
 
@@ -89,7 +86,7 @@ function buildMenuTextBlocks(ocrData) {
       type: "header",
       text: {
         type: "plain_text",
-        text: `🍽 [정반식당] 오늘의 메뉴 (${month}/${day} ${weekday})`,
+        text: `🍽 [정반식당] 오늘의 메뉴 (${month}/${day} ${ocrData.weekday})`,
         emoji: true,
       },
     },

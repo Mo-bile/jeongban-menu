@@ -31,7 +31,13 @@ async function runOcr(imageUrl) {
     timeout: 300_000,
     maxBuffer: 1024 * 1024,
   });
-  return JSON.parse(stdout.trim());
+  // Surya 모델 로딩 시 warning이 stdout에 섞일 수 있으므로 마지막 JSON 라인만 파싱
+  const lastJsonLine = stdout
+    .trim()
+    .split("\n")
+    .findLast((l) => l.trimStart().startsWith("{"));
+  if (!lastJsonLine) throw new Error("OCR stdout에서 JSON을 찾을 수 없습니다.");
+  return JSON.parse(lastJsonLine);
 }
 
 async function main() {

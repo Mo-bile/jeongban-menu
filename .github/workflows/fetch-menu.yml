@@ -15,7 +15,7 @@ jobs:
     name: 주간메뉴 이미지 전송 (월요일)
     if: >
       github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'image' || github.event.inputs.job == 'both') ||
-      github.event_name == 'schedule' && startsWith(github.event.schedule, '5 1 * * 1')
+      github.event_name == 'schedule' && github.event.schedule == '5 1 * * 1'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +38,7 @@ jobs:
     name: 오늘의 메뉴 OCR 텍스트 전송 (평일)
     if: >
       github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'ocr' || github.event.inputs.job == 'both') ||
-      github.event_name == 'schedule' && startsWith(github.event.schedule, '10 1 * * 1-5')
+      github.event_name == 'schedule' && github.event.schedule == '10 1 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
