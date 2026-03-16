@@ -1,20 +1,80 @@
-name: Weekly menu notification
+name: 정반식당 메뉴 알림
 on:
   schedule:
-    - cron: "0 0 * * 1"
+    - cron: "30 0 * * 1"      # 매주 월요일 09:30 KST - 이미지 전송
+    - cron: "35 0 * * 1-5"   # 평일 매일 09:35 KST - OCR 텍스트 전송
   workflow_dispatch:
+    inputs:
+      job:
+        description: "실행할 job (image | ocr | both)"
+        required: false
+        default: "both"
 
 jobs:
-  notify:
+  notify-image:
+    name: 주간메뉴 이미지 전송 (월요일)
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'image' || github.event.inputs.job == 'both') ||
+      github.event_name == 'schedule' && github.event.schedule == '30 0 * * 1'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "24"
           cache: "npm"
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npx playwright install chromium --with-deps
       - run: node scripts/fetch-menu-and-notify.js
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  notify-ocr:
+    name: 오늘의 메뉴 OCR 텍스트 전송 (평일)
+    if: >
+      github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'ocr' || github.event.inputs.job == 'both') ||
+      github.event_name == 'schedule' && github.event.schedule == '35 0 * * 1-5'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Cache Surya model weights
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/surya
+          key: surya-models-v1
+
+      - run: npm ci
+      - run: npx playwright install chromium --with-deps
+      - run: pip install -r requirements.txt -q
+
+      - name: OCR 메뉴 추출 및 Slack 전송
+        run: PYTHON_BIN=python node scripts/fetch-menu-ocr-and-notify.js
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

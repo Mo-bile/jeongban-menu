@@ -6,6 +6,7 @@
   "main": "scripts/fetch-menu-and-notify.js",
   "scripts": {
     "fetch-menu": "node scripts/fetch-menu-and-notify.js",
+    "fetch-menu-ocr": "node scripts/fetch-menu-ocr-and-notify.js",
     "postinstall": "npx playwright install chromium"
   },
   "keywords": ["naver", "slack", "menu", "cron"],
