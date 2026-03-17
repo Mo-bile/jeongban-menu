@@ -53,8 +53,11 @@ HOLIDAY_IMAGE_KEYWORDS = [
 HOLIDAY_TEXT_THRESHOLD = 3
 
 
+UPSCALE_WIDTH_THRESHOLD = 1200  # 이 너비 미만이면 저화질로 판단해 2배 업스케일링
+
+
 def download_image(source: str) -> Image.Image:
-    """URL 또는 로컬 경로에서 이미지를 로드합니다."""
+    """URL 또는 로컬 경로에서 이미지를 로드합니다. 저화질(너비 1200px 미만)이면 2배 업스케일링합니다."""
     if source.startswith("http://") or source.startswith("https://"):
         with urllib.request.urlopen(source) as resp:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
@@ -64,8 +67,13 @@ def download_image(source: str) -> Image.Image:
             img = Image.open(tmp_path).convert("RGB")
         finally:
             os.unlink(tmp_path)
-        return img
-    return Image.open(source).convert("RGB")
+    else:
+        img = Image.open(source).convert("RGB")
+
+    w, h = img.size
+    if w < UPSCALE_WIDTH_THRESHOLD:
+        img = img.resize((w * 2, h * 2), Image.LANCZOS)
+    return img
 
 
 def run_ocr(image: Image.Image):
