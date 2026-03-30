@@ -3,8 +3,9 @@
 정반식당 주간 메뉴표 이미지에서 오늘의 메뉴를 OCR로 추출합니다.
 
 사용법:
-  python scripts/ocr-menu.py <image_path_or_url> [weekday]
+  python scripts/ocr-menu.py <image_path_or_url> [weekday] [--debug]
   weekday: 0=월, 1=화, 2=수, 3=목, 4=금 (생략 시 오늘 요일 자동 감지)
+  --debug: 감지된 텍스트 전체, 컬럼 bbox, 필터링 과정을 stderr로 출력
 
 출력: JSON (stdout)
   성공: {"success": true, "weekday": "월", "menu": [...], "is_holiday": false}
@@ -18,12 +19,15 @@ import os
 import tempfile
 import urllib.request
 from datetime import datetime
-from PIL import Image
 
-EXCLUDED_ROW_KEYWORDS = ["프레시 박스", "헬시밀 박스", "프레시박스", "헬시밀박스", "프레시", "프레쉬", "헬시밀"]
+EXCLUDED_ROW_KEYWORDS = [
+    "프레시 박스", "헬시밀 박스", "프레시박스", "헬시밀박스",
+    "프레시", "프레쉬", "헬시밀",
+    "TAKE OUT", "TAKE", "테이크아웃",
+]
 
-# 구분 열에서 이 키워드가 나오면 해당 y 이후를 제외 (프레쉬/헬시밀 박스 시작점)
-EXCLUDED_SECTION_KEYWORDS = ["프레시", "프레쉬", "헬시밀"]
+# 구분 열에서 이 키워드가 나오면 해당 y 이후를 제외 (TAKE OUT / 프레쉬 / 헬시밀 박스 시작점)
+EXCLUDED_SECTION_KEYWORDS = ["프레시", "프레쉬", "헬시밀", "TAKE OUT", "TAKE"]
 WEEKDAY_NAMES = ["월", "화", "수", "목", "금"]
 
 # 하단 안내문구 시작 키워드 (이후 텍스트 전부 제거)
@@ -31,9 +35,10 @@ FOOTER_KEYWORDS = ["문의사항", "* 문의", "* 메뉴", "* 해당", "* 특정
 
 # 노이즈 텍스트 패턴 (정규식)
 NOISE_PATTERNS = [
-    r"^[-–—=_*·•<>/]+$",    # 대시/구분선/기호만 있는 텍스트
-    r"^<[^>]+>",             # HTML 태그
-    r"^[^\uAC00-\uD7A3a-zA-Z0-9]+$",  # 한글/영숫자 없는 기호만
+    r"^[-–—=_*·•<>/]+$",                    # 대시/구분선/기호만 있는 텍스트
+    r"^<[^>]+>",                             # HTML 태그
+    r"^[^\uAC00-\uD7A3a-zA-Z0-9]+$",        # 한글/영숫자 없는 기호만
+    r"^[A-Z0-9\s]{1,10}$",                  # 한글 없는 짧은 대문자/숫자 조합 (브랜드 로고 오인식 방지)
 ]
 
 # 공휴일 이미지에 자주 등장하는 키워드 (메뉴 텍스트와 구분되는 명확한 키워드만)
@@ -52,12 +57,22 @@ HOLIDAY_IMAGE_KEYWORDS = [
 # 공휴일 판단: 유의미한 메뉴 텍스트 수가 이 미만이면 공휴일로 간주
 HOLIDAY_TEXT_THRESHOLD = 3
 
-
 UPSCALE_WIDTH_THRESHOLD = 1200  # 이 너비 미만이면 저화질로 판단해 2배 업스케일링
 
+# 디버그 출력 여부 (--debug 플래그로 활성화)
+_DEBUG = False
 
-def download_image(source: str) -> Image.Image:
+
+def debug(*args, **kwargs):
+    """디버그 메시지를 stderr로 출력합니다."""
+    if _DEBUG:
+        print("[DEBUG]", *args, file=sys.stderr, **kwargs)
+
+
+def download_image(source: str):
     """URL 또는 로컬 경로에서 이미지를 로드합니다. 저화질(너비 1200px 미만)이면 2배 업스케일링합니다."""
+    from PIL import Image
+
     if source.startswith("http://") or source.startswith("https://"):
         with urllib.request.urlopen(source) as resp:
             with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
@@ -76,7 +91,7 @@ def download_image(source: str) -> Image.Image:
     return img
 
 
-def run_ocr(image: Image.Image):
+def run_ocr(image):
     """Surya로 텍스트 라인 검출 + 인식을 수행합니다."""
     from surya.detection import DetectionPredictor
     from surya.recognition import RecognitionPredictor
@@ -87,16 +102,29 @@ def run_ocr(image: Image.Image):
     rec_predictor = RecognitionPredictor(foundation)
 
     ocr_results = rec_predictor([image], det_predictor=det_predictor)
-    return ocr_results[0]
+    result = ocr_results[0]
+
+    debug(f"OCR 감지 텍스트 라인 ({len(result.text_lines)}개):")
+    for i, line in enumerate(result.text_lines):
+        debug(f"  [{i:02d}] bbox={[round(v) for v in line.bbox]}  text={line.text!r}")
+
+    return result
 
 
-def run_table_rec(image: Image.Image):
+def run_table_rec(image):
     """Surya로 표 구조(행/열/셀)를 인식합니다."""
     from surya.table_rec import TableRecPredictor
 
     predictor = TableRecPredictor()
     results = predictor([image])
-    return results[0]
+    result = results[0]
+
+    if hasattr(result, "cols") and result.cols:
+        debug(f"표 컬럼 ({len(result.cols)}개):")
+        for i, col in enumerate(sorted(result.cols, key=lambda c: c.bbox[0])):
+            debug(f"  col[{i}] bbox={[round(v) for v in col.bbox]}")
+
+    return result
 
 
 def bbox_center_x(bbox):
@@ -136,10 +164,17 @@ def assign_text_to_columns(text_lines, col_bboxes, img_width):
                 best_col = ci
         if best_col >= 0 and best_ratio > 0.3:
             col_texts[best_col].append((bbox_center_y(lbbox), text))
+            debug(f"  배정: col[{best_col}] ratio={best_ratio:.2f}  {text!r}")
+        else:
+            debug(f"  미배정(ratio={best_ratio:.2f}): {text!r}")
 
     # y 좌표 기준으로 정렬
     for ci in range(len(col_texts)):
         col_texts[ci].sort(key=lambda x: x[0])
+
+    if _DEBUG:
+        for ci, items in enumerate(col_texts):
+            debug(f"  col[{ci}] 텍스트 목록: {[t for _, t in items]}")
 
     return col_texts
 
@@ -172,9 +207,16 @@ def is_header_noise(text: str) -> bool:
         return True
     if t in ["월", "화", "수", "목", "금", "토", "일", "호"]:
         return True
-    # 브랜드명 노이즈 (부분 포함 여부 확인)
-    BRAND_KEYWORDS = ["正바를", "주간메뉴표", "[ 중식 ]", "[중식]"]
+    # 브랜드명/헤더 노이즈 (부분 포함 여부 확인)
+    BRAND_KEYWORDS = [
+        "正바를", "주간메뉴표", "[ 중식 ]", "[중식]",
+        "Weekly Menu", "고메드갤러리아", "GOURMET", "GALLERIA",
+        "정반식당", "PLUS",
+    ]
     if any(kw in t for kw in BRAND_KEYWORDS):
+        return True
+    # "정반" 단독 텍스트 (브랜드명, 메뉴와 혼동 방지를 위해 단독 매칭)
+    if re.fullmatch(r"정반", t):
         return True
     if re.match(r"\[?\s*중식\s*\]?\s*\d+:\d+", t):
         return True
@@ -237,21 +279,27 @@ def extract_menu_for_weekday(text_lines, col_bboxes, table_result, weekday_idx: 
 
     # y 기준 이하 텍스트 사전 제거
     raw_texts = [t for y, t in col_texts[target_col_idx] if y < excluded_y]
+    debug(f"[col {target_col_idx}] excluded_y={round(excluded_y)}, raw_texts ({len(raw_texts)}개): {raw_texts}")
 
     # 필터링: 헤더 노이즈, 하단 안내문구, 중복 제거
     menu_texts = []
     seen = set()
     for text in raw_texts:
         if is_footer(text):
+            debug(f"  FOOTER 중단: {text!r}")
             break
         if is_excluded_row_start(text):
+            debug(f"  EXCLUDED_ROW 중단: {text!r}")
             break
         if is_header_noise(text):
+            debug(f"  NOISE 제거: {text!r}")
             continue
         if text in seen:
+            debug(f"  중복 제거: {text!r}")
             continue
         seen.add(text)
         menu_texts.append(text)
+        debug(f"  포함: {text!r}")
 
     # 공휴일 감지: 유의미한 메뉴 텍스트 수가 임계값 미만
     is_holiday = len(menu_texts) < HOLIDAY_TEXT_THRESHOLD
@@ -268,16 +316,25 @@ def sort_col_bboxes(table_result):
 
 
 def main():
-    if len(sys.argv) < 2:
+    global _DEBUG
+
+    args = sys.argv[1:]
+
+    # --debug 플래그 파싱
+    if "--debug" in args:
+        _DEBUG = True
+        args = [a for a in args if a != "--debug"]
+
+    if not args:
         print(json.dumps({"success": False, "error": "이미지 경로 또는 URL을 인자로 전달하세요."}))
         sys.exit(1)
 
-    source = sys.argv[1]
+    source = args[0]
 
     # 요일 결정 (CLI 인자 > FORCE_WEEKDAY 환경변수 > 오늘 날짜 순)
-    if len(sys.argv) >= 3:
+    if len(args) >= 2:
         try:
-            weekday_idx = int(sys.argv[2])
+            weekday_idx = int(args[1])
         except ValueError:
             weekday_idx = datetime.today().weekday()
     elif os.environ.get("FORCE_WEEKDAY") is not None:
@@ -300,9 +357,11 @@ def main():
         return
 
     weekday_name = WEEKDAY_NAMES[weekday_idx]
+    debug(f"대상 요일: {weekday_name} (idx={weekday_idx}), 이미지 소스: {source}")
 
     try:
         image = download_image(source)
+        debug(f"이미지 로드 완료: {image.size[0]}x{image.size[1]}")
     except Exception as e:
         print(json.dumps({"success": False, "error": f"이미지 로드 실패: {e}"}))
         sys.exit(1)
@@ -310,6 +369,7 @@ def main():
     try:
         table_result = run_table_rec(image)
         col_bboxes = sort_col_bboxes(table_result)
+        debug(f"컬럼 bbox 목록 ({len(col_bboxes)}개): {[[round(v) for v in b] for b in col_bboxes]}")
     except Exception as e:
         print(json.dumps({"success": False, "error": f"표 인식 실패: {e}"}))
         sys.exit(1)
@@ -321,6 +381,7 @@ def main():
         print(json.dumps({"success": False, "error": f"OCR 실패: {e}"}))
         sys.exit(1)
 
+    debug("--- 텍스트 컬럼 배정 시작 ---")
     menu_texts, is_holiday = extract_menu_for_weekday(
         text_lines, col_bboxes, table_result, weekday_idx, image.width
     )
