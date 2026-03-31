@@ -75,9 +75,9 @@ export async function sendMenuNotification(webhookUrl, item) {
  * @returns {Array<object>} Slack blocks
  */
 function buildMenuTextBlocks(ocrData) {
-  const today = new Date();
-  const month = today.getMonth() + 1;
-  const day = today.getDate();
+  const todayKst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const month = todayKst.getUTCMonth() + 1;
+  const day = todayKst.getUTCDate();
 
   const special = ocrData.special ? `\`${ocrData.special}\`` : null;
   const menuText = [special, ...ocrData.menu].filter(Boolean).join("\n");

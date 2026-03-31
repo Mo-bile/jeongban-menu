@@ -18,7 +18,14 @@ import json
 import os
 import tempfile
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+
+def today_kst():
+    """KST 기준 오늘 날짜를 반환합니다."""
+    return datetime.now(KST)
 
 EXCLUDED_ROW_KEYWORDS = [
     "프레시 박스", "헬시밀 박스", "프레시박스", "헬시밀박스",
@@ -395,14 +402,14 @@ def main():
         try:
             weekday_idx = int(args[1])
         except ValueError:
-            weekday_idx = datetime.today().weekday()
+            weekday_idx = today_kst().weekday()
     elif os.environ.get("FORCE_WEEKDAY") is not None:
         try:
             weekday_idx = int(os.environ["FORCE_WEEKDAY"])
         except ValueError:
-            weekday_idx = datetime.today().weekday()
+            weekday_idx = today_kst().weekday()
     else:
-        weekday_idx = datetime.today().weekday()
+        weekday_idx = today_kst().weekday()
 
     # 평일(0~4)이 아니면 운영 안 함
     if weekday_idx > 4:
