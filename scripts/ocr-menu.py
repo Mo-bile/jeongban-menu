@@ -8,8 +8,8 @@
   --debug: 감지된 텍스트 전체, 컬럼 bbox, 필터링 과정을 stderr로 출력
 
 출력: JSON (stdout)
-  성공: {"success": true, "weekday": "월", "menu": [...], "is_holiday": false}
-  공휴일: {"success": true, "weekday": "월", "menu": [], "is_holiday": true}
+  성공: {"success": true, "weekday": "월", "special": "특선메뉴", "menu": [...], "is_holiday": false}
+  공휴일: {"success": true, "weekday": "월", "special": null, "menu": [], "is_holiday": true}
   실패: {"success": false, "error": "..."}
 """
 
@@ -259,15 +259,65 @@ def find_excluded_y_threshold(text_lines, col_bboxes):
     return threshold
 
 
-def extract_menu_for_weekday(text_lines, col_bboxes, table_result, weekday_idx: int, img_width: int):
+def find_special_row_y_range(table_result, image):
+    """
+    표 행(row)의 배경색을 실제 이미지 픽셀에서 측정하여
+    특선 행(붉은/핑크 배경)의 y 범위 (y_start, y_end)를 반환합니다.
+
+    R 채널 평균이 G·B 채널보다 현저히 높은 행(R - avg(G,B) > 30)을 특선 행으로 판단합니다.
+    특선 행이 없으면 (None, None)을 반환합니다.
+    """
+    import numpy as np
+
+    if not hasattr(table_result, "rows") or not table_result.rows:
+        return None, None
+
+    arr = np.array(image)
+    img_h, img_w = arr.shape[:2]
+
+    special_y_start = None
+    special_y_end = None
+
+    for row in table_result.rows:
+        y1 = max(0, int(row.bbox[1]))
+        y2 = min(img_h, int(row.bbox[3]))
+        x1 = max(0, int(row.bbox[0]))
+        x2 = min(img_w, int(row.bbox[2]))
+        region = arr[y1:y2, x1:x2]
+        if region.size == 0:
+            continue
+        mean = region.mean(axis=(0, 1))
+        r, g, b = mean[0], mean[1], mean[2]
+        redness = r - (g + b) / 2
+        debug(f"  row_id={row.row_id} y=[{y1},{y2}] RGB=({r:.0f},{g:.0f},{b:.0f}) redness={redness:.1f}")
+        if redness > 30:
+            if special_y_start is None or y1 < special_y_start:
+                special_y_start = y1
+            if special_y_end is None or y2 > special_y_end:
+                special_y_end = y2
+
+    return special_y_start, special_y_end
+
+
+def extract_menu_for_weekday(text_lines, col_bboxes, table_result, weekday_idx: int, img_width: int, image=None):
     """
     지정된 요일(컬럼 인덱스)의 메뉴 텍스트를 추출합니다.
 
     표 구조: 0번 컬럼 = '구분' 레이블, 1~5번 컬럼 = 월~금
     weekday_idx: 0=월, 1=화, 2=수, 3=목, 4=금
+
+    반환값: (special: str | None, menu_texts: list[str], is_holiday: bool)
+      special: 특선 메뉴 한 줄 문자열 - 배경색이 붉은 행의 텍스트를 공백으로 합침 (없으면 None)
     """
     # 구분 열에서 제외 행 y 기준 먼저 계산
     excluded_y = find_excluded_y_threshold(text_lines, col_bboxes)
+
+    # 특선 행 y 범위: 이미지 배경색 기반
+    special_y_start, special_y_end = None, None
+    if image is not None:
+        debug("--- 특선 행 배경색 탐지 ---")
+        special_y_start, special_y_end = find_special_row_y_range(table_result, image)
+        debug(f"  특선 행 y 범위: [{special_y_start}, {special_y_end}]")
 
     col_texts = assign_text_to_columns(text_lines, col_bboxes, img_width)
 
@@ -275,16 +325,17 @@ def extract_menu_for_weekday(text_lines, col_bboxes, table_result, weekday_idx: 
     target_col_idx = weekday_idx + 1 if len(col_bboxes) >= 6 else weekday_idx
 
     if target_col_idx >= len(col_texts):
-        return [], False
+        return None, [], False
 
-    # y 기준 이하 텍스트 사전 제거
-    raw_texts = [t for y, t in col_texts[target_col_idx] if y < excluded_y]
-    debug(f"[col {target_col_idx}] excluded_y={round(excluded_y)}, raw_texts ({len(raw_texts)}개): {raw_texts}")
+    # y 기준 이하 텍스트 사전 제거 (y, text) 형태 유지
+    raw_items = [(y, t) for y, t in col_texts[target_col_idx] if y < excluded_y]
+    debug(f"[col {target_col_idx}] excluded_y={round(excluded_y)}, raw_items ({len(raw_items)}개): {[t for _, t in raw_items]}")
 
-    # 필터링: 헤더 노이즈, 하단 안내문구, 중복 제거
-    menu_texts = []
+    # 노이즈·푸터·중복 필터링 (y 좌표 유지)
+    special_items = []
+    menu_items = []
     seen = set()
-    for text in raw_texts:
+    for y, text in raw_items:
         if is_footer(text):
             debug(f"  FOOTER 중단: {text!r}")
             break
@@ -298,13 +349,21 @@ def extract_menu_for_weekday(text_lines, col_bboxes, table_result, weekday_idx: 
             debug(f"  중복 제거: {text!r}")
             continue
         seen.add(text)
-        menu_texts.append(text)
-        debug(f"  포함: {text!r}")
+        # 배경색 기반 특선 행 분류
+        if special_y_start is not None and special_y_end is not None and special_y_start <= y <= special_y_end:
+            special_items.append(text)
+            debug(f"  [특선] 포함: {text!r}")
+        else:
+            menu_items.append(text)
+            debug(f"  [메뉴] 포함: {text!r}")
+
+    special = " ".join(special_items) if special_items else None
+    debug(f"  special={special!r}, menu_texts={menu_items}")
 
     # 공휴일 감지: 유의미한 메뉴 텍스트 수가 임계값 미만
-    is_holiday = len(menu_texts) < HOLIDAY_TEXT_THRESHOLD
+    is_holiday = (len(special_items) + len(menu_items)) < HOLIDAY_TEXT_THRESHOLD
 
-    return menu_texts, is_holiday
+    return special, menu_items, is_holiday
 
 
 def sort_col_bboxes(table_result):
@@ -382,16 +441,17 @@ def main():
         sys.exit(1)
 
     debug("--- 텍스트 컬럼 배정 시작 ---")
-    menu_texts, is_holiday = extract_menu_for_weekday(
-        text_lines, col_bboxes, table_result, weekday_idx, image.width
+    special, menu_texts, is_holiday = extract_menu_for_weekday(
+        text_lines, col_bboxes, table_result, weekday_idx, image.width, image
     )
 
     # 공휴일 이미지 키워드 감지 (추가 체크)
     if not is_holiday:
-        combined = " ".join(menu_texts)
+        combined = " ".join([special or ""] + menu_texts)
         for kw in HOLIDAY_IMAGE_KEYWORDS:
             if kw in combined:
                 is_holiday = True
+                special = None
                 menu_texts = []
                 break
 
@@ -399,6 +459,7 @@ def main():
         print(json.dumps({
             "success": True,
             "weekday": weekday_name,
+            "special": None,
             "menu": [],
             "is_holiday": True,
             "reason": f"공휴일로 인해 식당을 운영하지 않습니다."
@@ -407,6 +468,7 @@ def main():
         print(json.dumps({
             "success": True,
             "weekday": weekday_name,
+            "special": special,
             "menu": menu_texts,
             "is_holiday": False
         }, ensure_ascii=False))

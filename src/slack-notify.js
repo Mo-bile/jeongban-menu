@@ -79,8 +79,8 @@ function buildMenuTextBlocks(ocrData) {
   const month = today.getMonth() + 1;
   const day = today.getDate();
 
-  const [first, ...rest] = ocrData.menu;
-  const menuText = first ? [`*${first}*`, ...rest].join("\n") : "";
+  const special = ocrData.special ? `\`${ocrData.special}\`` : null;
+  const menuText = [special, ...ocrData.menu].filter(Boolean).join("\n");
 
   return [
     {
