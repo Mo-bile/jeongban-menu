@@ -1,8 +1,8 @@
 name: 정반식당 메뉴 알림
 on:
   schedule:
-    - cron: "10 23 * * 0"     # 매주 월요일 08:10 KST (일요일 23:10 UTC) - 이미지 전송
-    - cron: "15 23 * * 0-4"   # 평일 매일 08:15 KST (전날 23:15 UTC) - OCR 텍스트 전송
+    - cron: "7 0 * * 2"       # 매주 월요일 09:07 KST (화요일 00:07 UTC) - 이미지 전송
+    - cron: "12 0 * * 2-6"    # 평일 매일 09:12 KST (당일 00:12 UTC) - OCR 텍스트 전송
   workflow_dispatch:
     inputs:
       job:
@@ -15,7 +15,7 @@ jobs:
     name: 주간메뉴 이미지 전송 (월요일)
     if: >
       github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'image' || github.event.inputs.job == 'both') ||
-      github.event_name == 'schedule' && github.event.schedule == '10 23 * * 0'
+      github.event_name == 'schedule' && github.event.schedule == '7 0 * * 2'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,7 +38,7 @@ jobs:
     name: 오늘의 메뉴 OCR 텍스트 전송 (평일)
     if: >
       github.event_name == 'workflow_dispatch' && (github.event.inputs.job == 'ocr' || github.event.inputs.job == 'both') ||
-      github.event_name == 'schedule' && github.event.schedule == '15 23 * * 0-4'
+      github.event_name == 'schedule' && github.event.schedule == '12 0 * * 2-6'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
