@@ -79,7 +79,7 @@ function buildMenuTextBlocks(ocrData) {
   const month = todayKst.getUTCMonth() + 1;
   const day = todayKst.getUTCDate();
 
-  const special = ocrData.special ? `\`${ocrData.special}\`` : null;
+  const special = ocrData.special ? `메인 메뉴 : ${ocrData.special}` : null;
   const menuText = [special, ...ocrData.menu].filter(Boolean).join("\n");
 
   return [
